@@ -1,48 +1,54 @@
 package com.atulmgupta.netty;
 
+import com.atulmgupta.netty.client.codec.TimeStampDecoder;
+import com.atulmgupta.netty.client.codec.TimeStampEncoder;
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.timeout.IdleStateHandler;
+import io.netty.util.concurrent.DefaultEventExecutorGroup;
+import io.netty.util.concurrent.EventExecutorGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class NettyServer {
-    private int port;
+    private static Logger logger = LoggerFactory.getLogger(NettyServer.class);
 
-    private NettyServer(int port) {
-        this.port = port;
-    }
+    private static final int HTTP_PORT = 19000;
 
     public static void main(String[] args) throws Exception {
-        int port;
-        if (args.length > 0) {
-            port = Integer.parseInt(args[0]);
-        } else {
-            port = 8080;
-        }
-        new NettyServer(port).run();
-    }
+        NioEventLoopGroup boosGroup = new NioEventLoopGroup();
+        NioEventLoopGroup workerGroup = new NioEventLoopGroup();
+        ServerBootstrap bootstrap = new ServerBootstrap();
+        bootstrap.group(boosGroup, workerGroup);
+        bootstrap.channel(NioServerSocketChannel.class);
 
-    private void run() throws Exception {
-        EventLoopGroup bossGroup = new NioEventLoopGroup();
-        EventLoopGroup workerGroup = new NioEventLoopGroup();
-        try {
-            ServerBootstrap b = new ServerBootstrap();
-            b.group(bossGroup, workerGroup).channel(NioServerSocketChannel.class).childHandler(new ChannelInitializer<SocketChannel>() {
-                @Override
-                public void initChannel(SocketChannel ch) throws Exception {
-                    ch.pipeline().addLast(new RequestDecoder(), new ResponseDataEncoder(), new ProcessingHandler());
-                }
-            }).option(ChannelOption.SO_BACKLOG, 128).childOption(ChannelOption.SO_KEEPALIVE, true);
+        // ===========================================================
+        // 1. define a separate thread pool to execute handlers with
+        //    slow business logic. e.g database operation
+        // ===========================================================
+        final EventExecutorGroup group = new DefaultEventExecutorGroup(1500); //thread pool of 1500
 
-            ChannelFuture f = b.bind(port).sync();
-            f.channel().closeFuture().sync();
-        } finally {
-            workerGroup.shutdownGracefully();
-            bossGroup.shutdownGracefully();
-        }
+        bootstrap.childHandler(new ChannelInitializer<SocketChannel>() {
+            @Override
+            protected void initChannel(SocketChannel ch) throws Exception {
+                ChannelPipeline pipeline = ch.pipeline();
+                pipeline.addLast("idleStateHandler", new IdleStateHandler(0, 0, 5)); // add with name
+                pipeline.addLast(new TimeStampEncoder()); // add without name, name auto generated
+                pipeline.addLast(new TimeStampDecoder()); // add without name, name auto generated
+
+                //===========================================================
+                // 2. run handler with slow business logic
+                //    in separate thread from I/O thread
+                //===========================================================
+                pipeline.addLast(group, "serverHandler", new ServerHandler());
+            }
+        });
+
+        bootstrap.childOption(ChannelOption.SO_KEEPALIVE, true);
+        bootstrap.bind(HTTP_PORT).sync();
+        logger.info("netty server on port: {}", HTTP_PORT);
     }
 }
