@@ -1,2 +1,0 @@
-# netty
-Introduction to Netty
