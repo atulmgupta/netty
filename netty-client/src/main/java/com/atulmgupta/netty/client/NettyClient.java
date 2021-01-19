@@ -15,35 +15,38 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import org.springframework.stereotype.Component;
 
+@Component
 public class NettyClient {
-	private static final Logger logger = LoggerFactory.getLogger(NettyClient.class);
-	private boolean isRunning = false;
-	public static final String SERVER_IP = "localhost";
-	static int port = 9001;
-	private ExecutorService executor = null;
+    private static final Logger logger = LoggerFactory.getLogger(NettyClient.class);
+    private boolean isRunning = false;
+    public static final String SERVER_IP = "localhost";
+    static int port = 9001;
+    private ExecutorService executor = null;
 
-	public static void main(String[] args) throws InterruptedException {
-		NioEventLoopGroup workerGroup = new NioEventLoopGroup();
-		try {
-			Bootstrap b = new Bootstrap();
-			b.group(workerGroup);
-			b.channel(NioSocketChannel.class);
+    public void start() throws InterruptedException {
+        NioEventLoopGroup workerGroup = new NioEventLoopGroup();
+        try {
+            Bootstrap b = new Bootstrap();
+            b.group(workerGroup);
+            b.channel(NioSocketChannel.class);
 
-			b.handler(new ChannelInitializer<SocketChannel>() {
-				@Override
-				protected void initChannel(SocketChannel channel) throws Exception {
-					channel.pipeline().addLast(new RequestDataEncoder(), new ResponseDataDecoder(),
-							new ClientHandler());
+            b.handler(new ChannelInitializer<SocketChannel>() {
+                @Override
+                protected void initChannel(SocketChannel channel) throws Exception {
 
-				}
-			});
-			ChannelFuture f = b.connect(SERVER_IP, port).sync();
+                    channel.pipeline().addLast(new RequestDataEncoder(), new ResponseDataDecoder(),
+                            new ClientHandler());
 
-			f.channel().closeFuture().sync();
-		} finally {
-			workerGroup.shutdownGracefully();
-		}
+                }
+            });
+            ChannelFuture f = b.connect(SERVER_IP, port).sync();
 
-	}
+            f.channel().closeFuture().sync();
+        } finally {
+            workerGroup.shutdownGracefully();
+        }
+
+    }
 }
